@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "npx prisma generate && npx prisma db push && node src/index.js"
+restartPolicyType = "on_failure"
