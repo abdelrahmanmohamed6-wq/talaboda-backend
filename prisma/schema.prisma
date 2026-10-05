@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Role: SUPER_ADMIN | CHAIN_OWNER | BRANCH_MANAGER | DRIVER
+// OrderStatus: PENDING | ASSIGNED | PICKED_UP | IN_TRANSIT | DELIVERED | CANCELLED
+// PaymentType: CASH | CARD
+// ShiftStatus: ACTIVE | ENDED
+// TicketStatus: OPEN | RESOLVED
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?  @unique
+  email     String?  @unique
+  password  String
+  role      String   @default("DRIVER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  branch   Branch? @relation(fields: [branchId], references: [id])
+  branchId String?
+
+  ownedChain Chain?
+
+  orders         Order[]         @relation("DriverOrders")
+  shifts         Shift[]
+  locations      DriverLocation[]
+  supportTickets SupportTicket[]
+}
+
+model Chain {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  owner    User     @relation(fields: [ownerId], references: [id])
+  ownerId  String   @unique
+
+  branches Branch[]
+}
+
+model Branch {
+  id       String  @id @default(cuid())
+  name     String
+  lat      Float
+  lng      Float
+  vendorId String
+
+  chain    Chain?  @relation(fields: [chainId], references: [id])
+  chainId  String?
+
+  drivers  User[]
+  orders   Order[]
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  talabatOrderId  String   @unique
+  status          String   @default("PENDING")
+  paymentType     String   @default("CASH")
+  amount          Float    @default(0)
+  customerName    String
+  customerPhone   String
+  customerAddress String
+  customerLat     Float?
+  customerLng     Float?
+  createdAt       DateTime @default(now())
+  assignedAt      DateTime?
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+
+  branch   Branch @relation(fields: [branchId], references: [id])
+  branchId String
+
+  driver   User?   @relation("DriverOrders", fields: [driverId], references: [id])
+  driverId String?
+
+  shift   Shift?  @relation(fields: [shiftId], references: [id])
+  shiftId String?
+
+  supportTickets SupportTicket[]
+}
+
+model Shift {
+  id        String   @id @default(cuid())
+  status    String   @default("ACTIVE")
+  startTime DateTime @default(now())
+  endTime   DateTime?
+  totalCash Float    @default(0)
+  totalCard Float    @default(0)
+
+  driver   User   @relation(fields: [driverId], references: [id])
+  driverId String
+
+  orders Order[]
+}
+
+model DriverLocation {
+  id        String   @id @default(cuid())
+  lat       Float
+  lng       Float
+  timestamp DateTime @default(now())
+
+  driver   User   @relation(fields: [driverId], references: [id])
+  driverId String
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  message   String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+
+  driver   User   @relation(fields: [driverId], references: [id])
+  driverId String
+
+  order   Order?  @relation(fields: [orderId], references: [id])
+  orderId String?
+}
