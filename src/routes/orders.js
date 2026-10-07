@@ -80,4 +80,15 @@ router.patch('/:id/transfer', auth(['BRANCH_MANAGER']), async (req, res) => {
   res.json(order);
 });
 
+router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+  const { driverId } = req.body;
+  const order = await prisma.order.update({
+    where: { id: req.params.id },
+    data: { driverId, assignedAt: new Date(), status: 'ASSIGNED' }
+  });
+  getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
+  getIO().to(`driver:${driverId}`).emit('order:new', order);
+  res.json(order);
+});
+
 module.exports = router;

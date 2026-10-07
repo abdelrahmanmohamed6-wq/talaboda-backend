@@ -3,18 +3,32 @@ const axios = require('axios');
 let token = null;
 let tokenExpiry = 0;
 
+const BASE_URL = process.env.TALABAT_API_URL || 'https://talabat.partner.deliveryhero.io';
+const IAM_URL = 'https://iam-core.deliveryhero.io/connect/token';
+
 async function getToken() {
   if (token && Date.now() < tokenExpiry) return token;
 
-  const res = await axios.post(`${process.env.TALABAT_API_URL}/oauth/token`, {
-    client_id: process.env.TALABAT_CLIENT_ID,
-    client_secret: process.env.TALABAT_CLIENT_SECRET,
-    grant_type: 'client_credentials'
+  const params = new URLSearchParams();
+  params.append('grant_type', 'client_credentials');
+  params.append('client_id', process.env.TALABAT_CLIENT_ID);
+  params.append('client_secret', process.env.TALABAT_CLIENT_SECRET);
+
+  const res = await axios.post(IAM_URL, params, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
   token = res.data.access_token;
-  tokenExpiry = Date.now() + 1.8 * 60 * 60 * 1000; // refresh before 2hr expiry
+  tokenExpiry = Date.now() + 1.8 * 60 * 60 * 1000;
   return token;
+}
+
+async function getOrderDetails(orderId) {
+  const t = await getToken();
+  const res = await axios.get(`${BASE_URL}/orders/${orderId}`, {
+    headers: { Authorization: `Bearer ${t}` }
+  });
+  return res.data;
 }
 
 async function updateOrderStatus(talabatOrderId, status) {
@@ -22,7 +36,7 @@ async function updateOrderStatus(talabatOrderId, status) {
   try {
     const t = await getToken();
     await axios.patch(
-      `${process.env.TALABAT_API_URL}/orders/${talabatOrderId}/status`,
+      `${BASE_URL}/orders/${talabatOrderId}/status`,
       { status },
       { headers: { Authorization: `Bearer ${t}` } }
     );
@@ -36,7 +50,7 @@ async function pushDriverLocation(talabatOrderId, lat, lng) {
   try {
     const t = await getToken();
     await axios.post(
-      `${process.env.TALABAT_API_URL}/orders/${talabatOrderId}/driver-location`,
+      `${BASE_URL}/orders/${talabatOrderId}/driver-location`,
       { latitude: lat, longitude: lng },
       { headers: { Authorization: `Bearer ${t}` } }
     );
@@ -45,4 +59,4 @@ async function pushDriverLocation(talabatOrderId, lat, lng) {
   }
 }
 
-module.exports = { updateOrderStatus, pushDriverLocation };
+module.exports = { getOrderDetails, updateOrderStatus, pushDriverLocation };
