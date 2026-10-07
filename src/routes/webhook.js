@@ -14,7 +14,15 @@ router.post('/talabat', async (req, res) => {
 
   // RECEIVED = sandbox equivalent of READY_FOR_PICKUP
   if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED') && order_id) {
-    const vendorId = String(payload.vendor_id || payload.order?.vendor_id || '');
+    // Talabat sends store_id inside customer object — check all known paths
+    const vendorId = String(
+      payload.vendor_id ||
+      payload.order?.vendor_id ||
+      payload.customer?.store_id ||
+      payload.store_id ||
+      ''
+    );
+    console.log('Resolved vendorId:', vendorId);
 
     const branch = await prisma.branch.findFirst({
       where: { vendorId },
