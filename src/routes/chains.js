@@ -22,19 +22,7 @@ router.get('/', auth(['SUPER_ADMIN']), async (req, res) => {
   res.json(chains);
 });
 
-// Get single chain with credentials (super admin only)
-router.get('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
-  const chain = await prisma.chain.findUnique({
-    where: { id: req.params.id },
-    include: {
-      owner: { select: { id: true, name: true, email: true } },
-      branches: { include: { drivers: { where: { role: 'DRIVER' }, select: { id: true, name: true } } } }
-    }
-  });
-  res.json(chain);
-});
-
-// Get my chain (chain owner)
+// Get my chain (chain owner) — must be before /:id
 router.get('/mine', auth(['CHAIN_OWNER']), async (req, res) => {
   const chain = await prisma.chain.findUnique({
     where: { id: req.user.chainId },
@@ -45,6 +33,18 @@ router.get('/mine', auth(['CHAIN_OWNER']), async (req, res) => {
           _count: { select: { orders: true } }
         }
       }
+    }
+  });
+  res.json(chain);
+});
+
+// Get single chain with all credentials (super admin only)
+router.get('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
+  const chain = await prisma.chain.findUnique({
+    where: { id: req.params.id },
+    include: {
+      owner: { select: { id: true, name: true, email: true } },
+      branches: { include: { drivers: { where: { role: 'DRIVER' }, select: { id: true, name: true } } } }
     }
   });
   res.json(chain);
