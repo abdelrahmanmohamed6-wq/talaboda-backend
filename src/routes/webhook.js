@@ -7,13 +7,6 @@ const talabat = require('../services/talabat');
 const prisma = new PrismaClient();
 
 router.post('/talabat', async (req, res) => {
-  // Verify webhook secret
-  const secret = req.headers['x-secret'];
-  if (process.env.TALABAT_WEBHOOK_SECRET && secret !== process.env.TALABAT_WEBHOOK_SECRET) {
-    console.warn('Talabat webhook: invalid secret');
-    return res.status(401).json({ error: 'Invalid secret' });
-  }
-
   const payload = req.body;
   console.log('Talabat webhook:', JSON.stringify(payload, null, 2));
 
@@ -21,26 +14,41 @@ router.post('/talabat', async (req, res) => {
 
   // RECEIVED = sandbox equivalent of READY_FOR_PICKUP
   if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED') && order_id) {
-    // Try to fetch full order details from Talabat API; fall back to webhook payload
-    let orderData = payload.order || {};
-    try {
-      if (process.env.TALABAT_CLIENT_ID) {
-        const details = await talabat.getOrderDetails(order_id);
-        orderData = details;
-      }
-    } catch (e) {
-      console.warn('Could not fetch Talabat order details, using webhook payload:', e.message);
-    }
+    const vendorId = String(payload.vendor_id || payload.order?.vendor_id || '');
 
-    const vendorId = String(orderData.vendor_id || payload.vendor_id || '');
-    const branch = await prisma.branch.findFirst({ where: { vendorId } });
+    const branch = await prisma.branch.findFirst({
+      where: { vendorId },
+      include: { chain: true }
+    });
+
     if (!branch) {
       console.warn(`No branch found for vendorId: ${vendorId}`);
       return res.status(404).json({ error: 'Branch not found' });
     }
 
+    // Verify webhook secret — per-chain or global fallback
+    const secret = req.headers['x-secret'];
+    const expectedSecret = branch.chain?.talabatWebhookSecret || process.env.TALABAT_WEBHOOK_SECRET;
+    if (expectedSecret && secret !== expectedSecret) {
+      console.warn('Talabat webhook: invalid secret');
+      return res.status(401).json({ error: 'Invalid secret' });
+    }
+
     const existing = await prisma.order.findUnique({ where: { talabatOrderId: String(order_id) } });
     if (existing) return res.json({ ok: true });
+
+    // Fetch full order details from Talabat API using chain credentials
+    let orderData = payload.order || {};
+    try {
+      const details = await talabat.getOrderDetails(
+        order_id,
+        branch.chain?.talabatClientId,
+        branch.chain?.talabatClientSecret
+      );
+      if (details) orderData = details;
+    } catch (e) {
+      console.warn('Could not fetch Talabat order details, using webhook payload:', e.message);
+    }
 
     const items = orderData.products || orderData.items || [];
 

@@ -40,7 +40,7 @@ router.get('/mine', auth(['CHAIN_OWNER']), async (req, res) => {
 
 // Create chain + owner account (super admin only)
 router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
-  const { chainName, ownerName, ownerEmail, ownerPassword } = req.body;
+  const { chainName, ownerName, ownerEmail, ownerPassword, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret } = req.body;
   const hashed = await bcrypt.hash(ownerPassword, 10);
 
   const owner = await prisma.user.create({
@@ -48,18 +48,32 @@ router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
   });
 
   const chain = await prisma.chain.create({
-    data: { name: chainName, ownerId: owner.id },
+    data: {
+      name: chainName,
+      ownerId: owner.id,
+      talabatClientId: talabatClientId || null,
+      talabatClientSecret: talabatClientSecret || null,
+      talabatChainId: talabatChainId || null,
+      talabatWebhookSecret: talabatWebhookSecret || null,
+    },
     include: { owner: { select: { id: true, name: true, email: true } } }
   });
 
   res.json(chain);
 });
 
-// Update chain name
+// Update chain
 router.patch('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
+  const { name, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret } = req.body;
   const chain = await prisma.chain.update({
     where: { id: req.params.id },
-    data: { name: req.body.name }
+    data: {
+      ...(name !== undefined && { name }),
+      ...(talabatClientId !== undefined && { talabatClientId: talabatClientId || null }),
+      ...(talabatClientSecret !== undefined && { talabatClientSecret: talabatClientSecret || null }),
+      ...(talabatChainId !== undefined && { talabatChainId: talabatChainId || null }),
+      ...(talabatWebhookSecret !== undefined && { talabatWebhookSecret: talabatWebhookSecret || null }),
+    }
   });
   res.json(chain);
 });

@@ -6,6 +6,15 @@ const talabat = require('../services/talabat');
 
 const prisma = new PrismaClient();
 
+// Load chain credentials for a given branchId
+async function chainCreds(branchId) {
+  const branch = await prisma.branch.findUnique({
+    where: { id: branchId },
+    include: { chain: { select: { talabatClientId: true, talabatClientSecret: true } } }
+  });
+  return [branch?.chain?.talabatClientId, branch?.chain?.talabatClientSecret];
+}
+
 router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
   const where = req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } : {};
   const orders = await prisma.order.findMany({
@@ -33,7 +42,8 @@ router.patch('/:id/pickup', auth(['DRIVER']), async (req, res) => {
   });
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   getIO().to('admin').emit('order:updated', order);
-  await talabat.updateOrderStatus(order.talabatOrderId, 'PICKED_UP');
+  const creds = await chainCreds(order.branchId);
+  await talabat.updateOrderStatus(order.talabatOrderId, 'PICKED_UP', ...creds);
   res.json(order);
 });
 
@@ -44,7 +54,8 @@ router.patch('/:id/transit', auth(['DRIVER']), async (req, res) => {
   });
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   getIO().to('admin').emit('order:updated', order);
-  await talabat.updateOrderStatus(order.talabatOrderId, 'IN_TRANSIT');
+  const creds = await chainCreds(order.branchId);
+  await talabat.updateOrderStatus(order.talabatOrderId, 'IN_TRANSIT', ...creds);
   res.json(order);
 });
 
@@ -65,7 +76,8 @@ router.patch('/:id/deliver', auth(['DRIVER']), async (req, res) => {
 
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   getIO().to('admin').emit('order:updated', order);
-  await talabat.updateOrderStatus(order.talabatOrderId, 'DELIVERED');
+  const creds = await chainCreds(order.branchId);
+  await talabat.updateOrderStatus(order.talabatOrderId, 'DELIVERED', ...creds);
   res.json(order);
 });
 

@@ -39,6 +39,11 @@ model Chain {
   name      String
   createdAt DateTime @default(now())
 
+  talabatClientId      String?
+  talabatClientSecret  String?
+  talabatChainId       String?
+  talabatWebhookSecret String?
+
   owner    User     @relation(fields: [ownerId], references: [id])
   ownerId  String   @unique
 
