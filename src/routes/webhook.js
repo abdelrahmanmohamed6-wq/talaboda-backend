@@ -14,11 +14,12 @@ router.post('/talabat', async (req, res) => {
 
   if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED') && order_id) {
 
-    // Talabat sends store_id inside customer object
+    // Talabat sends store_id inside "client" object (the store/branch info)
     const vendorId = String(
       payload.vendor_id ||
       payload.order?.vendor_id ||
-      payload.customer?.store_id ||
+      payload.client?.store_id ||    // current format: client.store_id
+      payload.customer?.store_id ||  // older format fallback
       payload.store_id ||
       ''
     );
@@ -74,40 +75,46 @@ router.post('/talabat', async (req, res) => {
       console.log('[webhook] Falling back to webhook payload data');
     }
 
-    // Extract customer info — Talabat payload uses first_name, not name
+    // Talabat payload structure:
+    // payload.client = store info (name, store_id, phone)
+    // payload.customer = actual customer (first_name, delivery_address)
+    const delivAddr = payload.customer?.delivery_address || payload.delivery_address || {};
+
     const customerName =
       orderData.customer?.name ||
       orderData.customer?.first_name ||
       payload.customer?.first_name ||
       payload.customer?.name ||
-      orderData.delivery_address?.contact_name ||
+      delivAddr.contact_name ||
       'عميل';
 
     const customerPhone =
       orderData.customer?.phone ||
       orderData.customer?.phone_number ||
       payload.customer?.phone_number ||
+      payload.customer?.phone ||
       '';
 
     const customerAddress =
       orderData.delivery_address?.description ||
       orderData.delivery_address?.address ||
-      orderData.delivery_address?.formatted_address ||
+      delivAddr.instructions ||
       [
-        payload.delivery_address?.street,
-        payload.delivery_address?.suburb,
-        payload.delivery_address?.city
+        delivAddr.street,
+        delivAddr.number ? `رقم ${delivAddr.number}` : '',
+        delivAddr.suburb,
+        delivAddr.city
       ].filter(Boolean).join(', ') ||
       '';
 
     const customerLat =
       orderData.delivery_address?.latitude ||
-      payload.delivery_address?.latitude ||
+      delivAddr.latitude ||
       null;
 
     const customerLng =
       orderData.delivery_address?.longitude ||
-      payload.delivery_address?.longitude ||
+      delivAddr.longitude ||
       null;
 
     const amount =
