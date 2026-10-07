@@ -8,13 +8,13 @@ const prisma = new PrismaClient();
 
 router.post('/talabat', async (req, res) => {
   const payload = req.body;
-  console.log('Talabat webhook:', JSON.stringify(payload, null, 2));
-
   const { order_id, status } = payload;
 
-  // RECEIVED = sandbox equivalent of READY_FOR_PICKUP
+  console.log(`[webhook] status=${status} order_id=${order_id}`);
+
   if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED') && order_id) {
-    // Talabat sends store_id inside customer object — check all known paths
+
+    // Talabat sends store_id inside customer object
     const vendorId = String(
       payload.vendor_id ||
       payload.order?.vendor_id ||
@@ -22,7 +22,12 @@ router.post('/talabat', async (req, res) => {
       payload.store_id ||
       ''
     );
-    console.log('Resolved vendorId:', vendorId);
+    console.log(`[webhook] vendorId resolved: "${vendorId}"`);
+
+    if (!vendorId) {
+      console.warn('[webhook] vendorId is empty — cannot find branch');
+      return res.status(400).json({ error: 'vendorId missing from payload' });
+    }
 
     const branch = await prisma.branch.findFirst({
       where: { vendorId },
@@ -30,68 +35,139 @@ router.post('/talabat', async (req, res) => {
     });
 
     if (!branch) {
-      console.warn(`No branch found for vendorId: ${vendorId}`);
+      console.warn(`[webhook] No branch found for vendorId="${vendorId}"`);
+      // Log all known vendorIds to help debug
+      const allBranches = await prisma.branch.findMany({ select: { id: true, name: true, vendorId: true } });
+      console.log('[webhook] Known branches:', JSON.stringify(allBranches));
       return res.status(404).json({ error: 'Branch not found' });
     }
+    console.log(`[webhook] Branch found: ${branch.name} (id=${branch.id})`);
 
     // Verify webhook secret — per-chain or global fallback
     const secret = req.headers['x-secret'];
     const expectedSecret = branch.chain?.talabatWebhookSecret || process.env.TALABAT_WEBHOOK_SECRET;
     if (expectedSecret && secret !== expectedSecret) {
-      console.warn('Talabat webhook: invalid secret');
+      console.warn(`[webhook] Invalid secret. Got="${secret}" Expected="${expectedSecret}"`);
       return res.status(401).json({ error: 'Invalid secret' });
     }
 
     const existing = await prisma.order.findUnique({ where: { talabatOrderId: String(order_id) } });
-    if (existing) return res.json({ ok: true });
+    if (existing) {
+      console.log(`[webhook] Order ${order_id} already exists, skipping`);
+      return res.json({ ok: true });
+    }
 
     // Fetch full order details from Talabat API using chain credentials
-    let orderData = payload.order || {};
+    let orderData = {};
     try {
       const details = await talabat.getOrderDetails(
         order_id,
         branch.chain?.talabatClientId,
         branch.chain?.talabatClientSecret
       );
-      if (details) orderData = details;
-    } catch (e) {
-      console.warn('Could not fetch Talabat order details, using webhook payload:', e.message);
-    }
-
-    const items = orderData.products || orderData.items || [];
-
-    const newOrder = await prisma.order.create({
-      data: {
-        talabatOrderId: String(order_id),
-        status: 'PENDING',
-        talabatStatus: status,
-        branchId: branch.id,
-        customerName: orderData.customer?.name || orderData.delivery_address?.contact_name || 'عميل',
-        customerPhone: orderData.customer?.phone || orderData.delivery_address?.phone_number || '',
-        customerAddress: orderData.delivery_address?.description || orderData.delivery_address?.address || '',
-        customerLat: orderData.delivery_address?.latitude || null,
-        customerLng: orderData.delivery_address?.longitude || null,
-        amount: orderData.total_value ?? orderData.price?.total ?? 0,
-        paymentType: (orderData.payment_type === 'online' || orderData.payment_type === 'CARD') ? 'CARD' : 'CASH',
-        items: items.length > 0 ? items : undefined,
+      if (details) {
+        orderData = details;
+        console.log('[webhook] Fetched order details from Talabat API');
       }
-    });
-
-    const driver = await assignNearestDriver(branch.id, newOrder.id);
-    if (driver) {
-      getIO()?.to(`driver:${driver.id}`).emit('order:new', newOrder);
+    } catch (e) {
+      console.warn('[webhook] Could not fetch order details from API:', e.message);
+      console.log('[webhook] Falling back to webhook payload data');
     }
-    getIO()?.to(`branch:${branch.id}`).emit('order:new', newOrder);
-    getIO()?.to('admin').emit('order:new', newOrder);
+
+    // Extract customer info — Talabat payload uses first_name, not name
+    const customerName =
+      orderData.customer?.name ||
+      orderData.customer?.first_name ||
+      payload.customer?.first_name ||
+      payload.customer?.name ||
+      orderData.delivery_address?.contact_name ||
+      'عميل';
+
+    const customerPhone =
+      orderData.customer?.phone ||
+      orderData.customer?.phone_number ||
+      payload.customer?.phone_number ||
+      '';
+
+    const customerAddress =
+      orderData.delivery_address?.description ||
+      orderData.delivery_address?.address ||
+      orderData.delivery_address?.formatted_address ||
+      [
+        payload.delivery_address?.street,
+        payload.delivery_address?.suburb,
+        payload.delivery_address?.city
+      ].filter(Boolean).join(', ') ||
+      '';
+
+    const customerLat =
+      orderData.delivery_address?.latitude ||
+      payload.delivery_address?.latitude ||
+      null;
+
+    const customerLng =
+      orderData.delivery_address?.longitude ||
+      payload.delivery_address?.longitude ||
+      null;
+
+    const amount =
+      orderData.total_value ??
+      orderData.price?.total ??
+      payload.price?.total ??
+      0;
+
+    const paymentRaw = orderData.payment_type || payload.payment?.type || '';
+    const paymentType = (paymentRaw === 'online' || paymentRaw === 'CARD' || paymentRaw === 'PAID')
+      ? 'CARD'
+      : 'CASH';
+
+    const items = orderData.products || orderData.items || payload.items || [];
+
+    console.log(`[webhook] Creating order: customer="${customerName}" amount=${amount} payment=${paymentType}`);
+
+    try {
+      const newOrder = await prisma.order.create({
+        data: {
+          talabatOrderId: String(order_id),
+          status: 'PENDING',
+          talabatStatus: status,
+          branchId: branch.id,
+          customerName,
+          customerPhone,
+          customerAddress,
+          customerLat,
+          customerLng,
+          amount,
+          paymentType,
+          items: items.length > 0 ? items : undefined,
+        }
+      });
+      console.log(`[webhook] ✅ Order created: ${newOrder.id}`);
+
+      const driver = await assignNearestDriver(branch.id, newOrder.id);
+      if (driver) {
+        console.log(`[webhook] Driver assigned: ${driver.name}`);
+        getIO()?.to(`driver:${driver.id}`).emit('order:new', newOrder);
+      } else {
+        console.log('[webhook] No driver assigned (none available)');
+      }
+      getIO()?.to(`branch:${branch.id}`).emit('order:new', newOrder);
+      getIO()?.to('admin').emit('order:new', newOrder);
+
+    } catch (err) {
+      console.error('[webhook] ❌ Failed to create order:', err.message);
+      return res.status(500).json({ error: 'Failed to save order' });
+    }
   }
 
-  if (status === 'CANCELLED') {
+  if (status === 'CANCELLED' && order_id) {
     const existing = await prisma.order.findUnique({ where: { talabatOrderId: String(order_id) } });
     if (existing && existing.status !== 'CANCELLED') {
       const updated = await prisma.order.update({
         where: { id: existing.id },
         data: { status: 'CANCELLED', talabatStatus: 'CANCELLED' }
       });
+      console.log(`[webhook] Order ${order_id} marked CANCELLED`);
       getIO()?.to(`branch:${existing.branchId}`).emit('order:updated', updated);
       getIO()?.to('admin').emit('order:updated', updated);
       if (existing.driverId) {
