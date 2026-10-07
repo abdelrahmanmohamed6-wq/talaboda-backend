@@ -92,6 +92,58 @@ router.patch('/:id/transfer', auth(['BRANCH_MANAGER']), async (req, res) => {
   res.json(order);
 });
 
+// Import a past Talabat order by its order_id (UUID from webhook / external_order_id numeric)
+router.post('/import/:talabatOrderId', auth(['SUPER_ADMIN']), async (req, res) => {
+  const { talabatOrderId } = req.params;
+  const { branchId } = req.body;
+
+  // Find branch — either provided or first match
+  const branch = branchId
+    ? await prisma.branch.findUnique({ where: { id: branchId }, include: { chain: true } })
+    : await prisma.branch.findFirst({ include: { chain: true } });
+
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+  // Don't duplicate
+  const existing = await prisma.order.findUnique({ where: { talabatOrderId: String(talabatOrderId) } });
+  if (existing) return res.json({ message: 'Already imported', order: existing });
+
+  try {
+    const details = await talabat.getOrderDetails(
+      talabatOrderId,
+      branch.chain?.talabatClientId,
+      branch.chain?.talabatClientSecret
+    );
+    if (!details) return res.status(404).json({ error: 'Order not found in Talabat API' });
+
+    const delivAddr = details.delivery_address || {};
+    const items = details.products || details.items || [];
+
+    const order = await prisma.order.create({
+      data: {
+        talabatOrderId: String(talabatOrderId),
+        status: 'PENDING',
+        talabatStatus: details.status || 'IMPORTED',
+        branchId: branch.id,
+        customerName: details.customer?.name || details.customer?.first_name || 'عميل',
+        customerPhone: details.customer?.phone || details.customer?.phone_number || '',
+        customerAddress: delivAddr.description || [delivAddr.street, delivAddr.suburb, delivAddr.city].filter(Boolean).join(', ') || '',
+        customerLat: delivAddr.latitude || null,
+        customerLng: delivAddr.longitude || null,
+        amount: details.total_value ?? details.price?.total ?? 0,
+        paymentType: (details.payment_type === 'online' || details.payment_type === 'CARD') ? 'CARD' : 'CASH',
+        items: items.length > 0 ? items : undefined,
+      }
+    });
+
+    getIO()?.to('admin').emit('order:new', order);
+    getIO()?.to(`branch:${branch.id}`).emit('order:new', order);
+    res.json({ message: 'Imported successfully', order });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
   const { driverId } = req.body;
   const order = await prisma.order.update({
