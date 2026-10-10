@@ -17,11 +17,18 @@ async function chainCreds(branchId) {
 
 router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
   const where = req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } : {};
+  const { date } = req.query; // 'YYYY-MM-DD' — filter by createdAt date
+  if (date) {
+    const start = new Date(date);
+    const end = new Date(date);
+    end.setDate(end.getDate() + 1);
+    where.createdAt = { gte: start, lt: end };
+  }
   const orders = await prisma.order.findMany({
     where,
     include: { driver: { select: { id: true, name: true, phone: true, role: true, isActive: true } }, branch: true },
     orderBy: { createdAt: 'desc' },
-    take: 100
+    take: 500
   });
   res.json(orders);
 });
