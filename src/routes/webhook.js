@@ -130,12 +130,19 @@ router.post('/talabat', async (req, res) => {
 
     const items = orderData.products || orderData.items || payload.items || [];
 
-    console.log(`[webhook] Creating order: customer="${customerName}" amount=${amount} payment=${paymentType}`);
+    // Short numeric Talabat order ID (e.g. 3770) — may come from payload or API details
+    const externalOrderId = String(
+      orderData.external_order_id || orderData.order_number || orderData.reference_id ||
+      payload.external_order_id || payload.order_number || payload.reference_id || ''
+    ) || null;
+
+    console.log(`[webhook] Creating order: customer="${customerName}" amount=${amount} payment=${paymentType} extId=${externalOrderId}`);
 
     try {
       const newOrder = await prisma.order.create({
         data: {
           talabatOrderId: String(order_id),
+          externalOrderId,
           status: 'PENDING',
           talabatStatus: status,
           branchId: branch.id,

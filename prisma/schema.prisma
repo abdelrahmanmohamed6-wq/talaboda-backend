@@ -67,6 +67,7 @@ model Branch {
 model Order {
   id              String   @id @default(cuid())
   talabatOrderId  String   @unique
+  externalOrderId String?
   status          String   @default("PENDING")
   paymentType     String   @default("CASH")
   amount          Float    @default(0)
