@@ -44,6 +44,9 @@ model Chain {
   talabatChainId       String?
   talabatWebhookSecret String?
 
+  clientWebhookUrl    String?
+  clientWebhookSecret String?
+
   owner    User     @relation(fields: [ownerId], references: [id])
   ownerId  String   @unique
 

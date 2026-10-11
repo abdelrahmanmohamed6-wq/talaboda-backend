@@ -52,7 +52,7 @@ router.get('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
 
 // Create chain + owner account (super admin only)
 router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
-  const { chainName, ownerName, ownerEmail, ownerPassword, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret } = req.body;
+  const { chainName, ownerName, ownerEmail, ownerPassword, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret, clientWebhookUrl, clientWebhookSecret } = req.body;
   const hashed = await bcrypt.hash(ownerPassword, 10);
 
   const owner = await prisma.user.create({
@@ -67,6 +67,8 @@ router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
       talabatClientSecret: talabatClientSecret || null,
       talabatChainId: talabatChainId || null,
       talabatWebhookSecret: talabatWebhookSecret || null,
+      clientWebhookUrl: clientWebhookUrl || null,
+      clientWebhookSecret: clientWebhookSecret || null,
     },
     include: { owner: { select: { id: true, name: true, email: true } } }
   });
@@ -76,7 +78,7 @@ router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
 
 // Update chain
 router.patch('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
-  const { name, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret } = req.body;
+  const { name, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret, clientWebhookUrl, clientWebhookSecret } = req.body;
   const chain = await prisma.chain.update({
     where: { id: req.params.id },
     data: {
@@ -85,6 +87,8 @@ router.patch('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
       ...(talabatClientSecret !== undefined && { talabatClientSecret: talabatClientSecret || null }),
       ...(talabatChainId !== undefined && { talabatChainId: talabatChainId || null }),
       ...(talabatWebhookSecret !== undefined && { talabatWebhookSecret: talabatWebhookSecret || null }),
+      ...(clientWebhookUrl !== undefined && { clientWebhookUrl: clientWebhookUrl || null }),
+      ...(clientWebhookSecret !== undefined && { clientWebhookSecret: clientWebhookSecret || null }),
     }
   });
   res.json(chain);

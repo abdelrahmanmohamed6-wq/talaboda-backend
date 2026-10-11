@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const { getIO } = require('../socket');
 const talabat = require('../services/talabat');
+const { notifyClient } = require('../services/clientWebhook');
 
 const prisma = new PrismaClient();
 
@@ -51,6 +52,7 @@ router.patch('/:id/pickup', auth(['DRIVER']), async (req, res) => {
   getIO().to('admin').emit('order:updated', order);
   const creds = await chainCreds(order.branchId);
   await talabat.updateOrderStatus(order.talabatOrderId, 'PICKED_UP', ...creds);
+  notifyClient(order.id).catch(() => {});
   res.json(order);
 });
 
@@ -63,6 +65,7 @@ router.patch('/:id/transit', auth(['DRIVER']), async (req, res) => {
   getIO().to('admin').emit('order:updated', order);
   const creds = await chainCreds(order.branchId);
   await talabat.updateOrderStatus(order.talabatOrderId, 'IN_TRANSIT', ...creds);
+  notifyClient(order.id).catch(() => {});
   res.json(order);
 });
 
@@ -87,6 +90,7 @@ router.patch('/:id/deliver', auth(['DRIVER']), async (req, res) => {
   getIO().to('admin').emit('order:updated', order);
   const creds = await chainCreds(order.branchId);
   await talabat.updateOrderStatus(order.talabatOrderId, 'DELIVERED', ...creds);
+  notifyClient(order.id).catch(() => {});
   res.json(order);
 });
 

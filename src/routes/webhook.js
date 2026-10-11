@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const { getIO } = require('../socket');
 const { assignNearestDriver } = require('../services/assignment');
 const talabat = require('../services/talabat');
+const { notifyClient } = require('../services/clientWebhook');
 
 const prisma = new PrismaClient();
 
@@ -207,6 +208,7 @@ router.post('/talabat', async (req, res) => {
       }
       getIO()?.to(`branch:${branch.id}`).emit('order:new', newOrder);
       getIO()?.to('admin').emit('order:new', newOrder);
+      notifyClient(newOrder.id).catch(() => {});
 
       // Auto-close check: if branch overwhelmed (≥5 pending + no free drivers) → close on Talabat
       autoCloseIfOverwhelmed(branch).catch(e => console.error('[webhook] auto-close check error:', e.message));
@@ -230,6 +232,7 @@ router.post('/talabat', async (req, res) => {
       if (existing.driverId) {
         getIO()?.to(`driver:${existing.driverId}`).emit('order:cancelled', { orderId: existing.id });
       }
+      notifyClient(updated.id).catch(() => {});
     }
   }
 

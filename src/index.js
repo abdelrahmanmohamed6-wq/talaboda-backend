@@ -14,6 +14,7 @@ const shiftsRoutes = require('./routes/shifts');
 const supportRoutes = require('./routes/support');
 const chainsRoutes = require('./routes/chains');
 const pickingRoutes = require('./routes/picking');
+const trackingRoutes = require('./routes/tracking');
 
 const app = express();
 const httpServer = createServer(app);
@@ -37,6 +38,7 @@ app.use('/api/shifts', shiftsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/chains', chainsRoutes);
 app.use('/api/picking', pickingRoutes);
+app.use('/api/tracking', trackingRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
