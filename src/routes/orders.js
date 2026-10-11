@@ -6,13 +6,13 @@ const talabat = require('../services/talabat');
 
 const prisma = new PrismaClient();
 
-// Load chain credentials for a given branchId
+// Load chain credentials + chainId for a given branchId
 async function chainCreds(branchId) {
   const branch = await prisma.branch.findUnique({
     where: { id: branchId },
-    include: { chain: { select: { talabatClientId: true, talabatClientSecret: true } } }
+    include: { chain: { select: { talabatClientId: true, talabatClientSecret: true, talabatChainId: true } } }
   });
-  return [branch?.chain?.talabatClientId, branch?.chain?.talabatClientSecret];
+  return [branch?.chain?.talabatClientId, branch?.chain?.talabatClientSecret, branch?.chain?.talabatChainId];
 }
 
 router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
@@ -119,7 +119,8 @@ router.post('/import/:talabatOrderId', auth(['SUPER_ADMIN']), async (req, res) =
     const details = await talabat.getOrderDetails(
       talabatOrderId,
       branch.chain?.talabatClientId,
-      branch.chain?.talabatClientSecret
+      branch.chain?.talabatClientSecret,
+      branch.chain?.talabatChainId
     );
     if (!details) return res.status(404).json({ error: 'Order not found in Talabat API' });
 
@@ -160,6 +161,65 @@ router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (re
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   getIO().to(`driver:${driverId}`).emit('order:new', order);
   res.json(order);
+});
+
+// POST /api/orders/fix-amounts — retroactively fetch & fix amount=0 orders from Talabat API
+router.post('/fix-amounts', auth(['SUPER_ADMIN']), async (req, res) => {
+  const zeroOrders = await prisma.order.findMany({
+    where: { amount: 0 },
+    include: { branch: { include: { chain: true } } },
+  });
+
+  const results = { fixed: 0, failed: 0, skipped: 0 };
+
+  for (const order of zeroOrders) {
+    const chain = order.branch?.chain;
+    if (!chain?.talabatClientId || !chain?.talabatChainId) {
+      results.skipped++;
+      continue;
+    }
+
+    try {
+      const details = await talabat.getOrderDetails(
+        order.talabatOrderId,
+        chain.talabatClientId,
+        chain.talabatClientSecret,
+        chain.talabatChainId
+      );
+
+      let amount = 0;
+      if (details) {
+        amount =
+          details.total_value ??
+          details.price?.total ??
+          details.payment?.collect_at_pickup ??
+          0;
+      }
+
+      // Fallback: calculate from saved items if API returned nothing
+      if (!amount && Array.isArray(order.items) && order.items.length > 0) {
+        amount = order.items.reduce((sum, it) => {
+          const price = it.price || it.unit_price || it.unitPrice || 0;
+          const qty = it.quantity || it.qty || 1;
+          return sum + (price * qty);
+        }, 0);
+      }
+
+      if (amount > 0) {
+        await prisma.order.update({ where: { id: order.id }, data: { amount } });
+        results.fixed++;
+        console.log(`[fix-amounts] Fixed order ${order.talabatOrderId} → ${amount}`);
+      } else {
+        results.failed++;
+        console.log(`[fix-amounts] Could not resolve amount for ${order.talabatOrderId}`);
+      }
+    } catch (e) {
+      results.failed++;
+      console.error(`[fix-amounts] Error on ${order.talabatOrderId}:`, e.message);
+    }
+  }
+
+  res.json({ total: zeroOrders.length, ...results });
 });
 
 module.exports = router;

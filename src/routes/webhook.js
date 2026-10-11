@@ -11,8 +11,13 @@ router.post('/talabat', async (req, res) => {
   const { order_id, status } = payload;
 
   console.log(`[webhook] status=${status} order_id=${order_id}`);
+  // Log full payload for unknown statuses — helps debug what Talabat sends
+  const HANDLED = ['READY_FOR_PICKUP', 'RECEIVED', 'ACCEPTED', 'CANCELLED'];
+  if (!HANDLED.includes(status)) {
+    console.log('[webhook] ⚠️ Unhandled status. Full payload:', JSON.stringify(payload, null, 2));
+  }
 
-  if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED') && order_id) {
+  if ((status === 'READY_FOR_PICKUP' || status === 'RECEIVED' || status === 'ACCEPTED') && order_id) {
 
     // Talabat sends store_id inside "client" object (the store/branch info)
     const vendorId = String(
@@ -64,7 +69,8 @@ router.post('/talabat', async (req, res) => {
       const details = await talabat.getOrderDetails(
         order_id,
         branch.chain?.talabatClientId,
-        branch.chain?.talabatClientSecret
+        branch.chain?.talabatClientSecret,
+        branch.chain?.talabatChainId
       );
       if (details) {
         orderData = details;
@@ -121,6 +127,8 @@ router.post('/talabat', async (req, res) => {
       orderData.total_value ??
       orderData.price?.total ??
       payload.price?.total ??
+      payload.payment?.collect_at_pickup ??
+      payload.payment?.amount ??
       0;
 
     const paymentRaw = orderData.payment_type || payload.payment?.type || '';
