@@ -27,16 +27,18 @@ async function getToken(clientId, clientSecret) {
   return tokenCache[clientId].token;
 }
 
-function resolveCredentials(chainClientId, chainClientSecret) {
+function resolveCredentials(chainClientId, chainClientSecret, chainChainId) {
   return [
     chainClientId || process.env.TALABAT_CLIENT_ID,
-    chainClientSecret || process.env.TALABAT_CLIENT_SECRET
+    chainClientSecret || process.env.TALABAT_CLIENT_SECRET,
+    chainChainId || process.env.TALABAT_CHAIN_ID,
   ];
 }
 
 // GET order details from Talabat
 async function getOrderDetails(talabatOrderId, chainClientId, chainClientSecret, talabatChainId) {
-  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  const [clientId, clientSecret, resolvedChainId] = resolveCredentials(chainClientId, chainClientSecret, talabatChainId);
+  talabatChainId = resolvedChainId;
   if (!clientId || !talabatChainId) return null;
   try {
     const token = await getToken(clientId, clientSecret);
@@ -53,7 +55,8 @@ async function getOrderDetails(talabatOrderId, chainClientId, chainClientSecret,
 
 // PATCH order — used for UPDATE_CART, READY_FOR_PICKUP, DISPATCHED, CANCELLED
 async function updateOrder(talabatOrderId, status, items, chainClientId, chainClientSecret, talabatChainId) {
-  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  const [clientId, clientSecret, resolvedChainId] = resolveCredentials(chainClientId, chainClientSecret, talabatChainId);
+  talabatChainId = resolvedChainId;
   if (!clientId || !talabatChainId) throw new Error('Missing Talabat credentials or chainId');
 
   const token = await getToken(clientId, clientSecret);
@@ -69,7 +72,7 @@ async function updateOrder(talabatOrderId, status, items, chainClientId, chainCl
 
 // Legacy – kept for backward compat with existing code
 async function updateOrderStatus(talabatOrderId, status, chainClientId, chainClientSecret) {
-  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret, null);
   if (!clientId) return;
   try {
     const token = await getToken(clientId, clientSecret);
@@ -84,7 +87,7 @@ async function updateOrderStatus(talabatOrderId, status, chainClientId, chainCli
 }
 
 async function pushDriverLocation(talabatOrderId, lat, lng, chainClientId, chainClientSecret) {
-  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret, null);
   if (!clientId) return;
   try {
     const token = await getToken(clientId, clientSecret);
@@ -102,11 +105,16 @@ async function pushDriverLocation(talabatOrderId, lat, lng, chainClientId, chain
 // open=true → { status: "OPEN" }
 // open=false → { status: "CLOSED_UNTIL", closed_reason: "TECHNICAL_PROBLEM", closed_until: isoDate }
 async function setVendorStatus(vendorId, open, chainClientId, chainClientSecret, talabatChainId, closedUntilIso) {
-  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
-  if (!clientId || !talabatChainId || !vendorId) {
-    console.warn('[talabat] setVendorStatus: missing credentials or vendorId');
-    return null;
+  const [clientId, clientSecret, resolvedChainId] = resolveCredentials(chainClientId, chainClientSecret, talabatChainId);
+  talabatChainId = resolvedChainId;
+  if (!clientId || !talabatChainId) {
+    throw new Error('talabatChainId or talabatClientId not configured on this chain — set them in chain settings or Railway env vars');
   }
+  if (!vendorId) {
+    throw new Error('vendorId not set on this branch — edit the branch and add the Vendor ID');
+  }
+  const url = `${BASE}/v2/chains/${talabatChainId}/vendors/${vendorId}/status`;
+  console.log(`[talabat] setVendorStatus → ${open ? 'OPEN' : 'CLOSED_UNTIL'} | url=${url}`);
   try {
     const token = await getToken(clientId, clientSecret);
     const body = open
@@ -116,16 +124,16 @@ async function setVendorStatus(vendorId, open, chainClientId, chainClientSecret,
           closed_reason: 'TECHNICAL_PROBLEM',
           closed_until: closedUntilIso || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         };
-    const res = await axios.put(
-      `${BASE}/v2/chains/${talabatChainId}/vendors/${vendorId}/status`,
-      body,
-      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' } }
-    );
+    const res = await axios.put(url, body, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+    });
     console.log(`[talabat] Vendor ${vendorId} status set to ${open ? 'OPEN' : 'CLOSED_UNTIL'}`);
     return res.data;
   } catch (e) {
-    console.error('[talabat] setVendorStatus failed:', e.response?.data || e.message);
-    throw e;
+    const talabatErr = e.response?.data;
+    console.error('[talabat] setVendorStatus failed:', talabatErr || e.message);
+    const msg = talabatErr?.message || talabatErr?.error || JSON.stringify(talabatErr) || e.message;
+    throw new Error(`Talabat API ${e.response?.status || 'error'}: ${msg}`);
   }
 }
 

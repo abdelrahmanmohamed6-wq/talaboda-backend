@@ -79,7 +79,7 @@ router.post('/:id/close', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER'])
     );
     res.json({ ok: true, message: `Branch "${branch.name}" closed on Talabat` });
   } catch (e) {
-    res.status(500).json({ error: e.response?.data?.message || e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -97,7 +97,7 @@ router.post('/:id/open', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']),
     );
     res.json({ ok: true, message: `Branch "${branch.name}" opened on Talabat` });
   } catch (e) {
-    res.status(500).json({ error: e.response?.data?.message || e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
