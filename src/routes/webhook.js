@@ -124,12 +124,30 @@ router.post('/talabat', async (req, res) => {
       null;
 
     const amount =
-      orderData.total_value ??
-      orderData.price?.total ??
-      payload.price?.total ??
-      payload.payment?.collect_at_pickup ??
-      payload.payment?.amount ??
+      orderData.total_value ||
+      orderData.price?.total ||
+      orderData.grand_total ||
+      payload.price?.total ||
+      payload.grand_total ||
+      payload.subtotal ||
+      payload.payment?.grand_total ||
+      payload.payment?.collect_at_pickup ||
+      payload.payment?.subtotal ||
+      payload.payment?.amount ||
       0;
+
+    // Log all amount-related fields when amount is 0 so we can debug
+    if (!amount) {
+      console.warn('[webhook] ⚠️ Amount is 0 — raw amount fields:', JSON.stringify({
+        'orderData.total_value': orderData.total_value,
+        'orderData.price': orderData.price,
+        'orderData.grand_total': orderData.grand_total,
+        'payload.price': payload.price,
+        'payload.grand_total': payload.grand_total,
+        'payload.subtotal': payload.subtotal,
+        'payload.payment': payload.payment,
+      }, null, 2));
+    }
 
     const paymentRaw = orderData.payment_type || payload.payment?.type || '';
     const paymentType = (paymentRaw === 'online' || paymentRaw === 'CARD' || paymentRaw === 'PAID')
