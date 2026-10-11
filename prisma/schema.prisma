@@ -83,6 +83,7 @@ model Order {
   items           Json?
   pickingItems    Json?
   talabatStatus   String?
+  proofPhoto      String?
 
   branch   Branch @relation(fields: [branchId], references: [id])
   branchId String

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
+const talabat = require('../services/talabat');
 
 const prisma = new PrismaClient();
 
@@ -60,6 +61,44 @@ router.post('/:id/managers', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, r
     data: { name, phone, password: hashed, role: 'BRANCH_MANAGER', branchId: req.params.id }
   });
   res.json({ id: manager.id, name: manager.name, phone: manager.phone });
+});
+
+// POST /branches/:id/close — close this branch on Talabat
+router.post('/:id/close', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const branch = await prisma.branch.findUnique({
+    where: { id: req.params.id },
+    include: { chain: true },
+  });
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+  const { closedUntilIso } = req.body; // optional override, defaults to 30 min
+  try {
+    await talabat.setVendorStatus(
+      branch.vendorId, false,
+      branch.chain?.talabatClientId, branch.chain?.talabatClientSecret, branch.chain?.talabatChainId,
+      closedUntilIso
+    );
+    res.json({ ok: true, message: `Branch "${branch.name}" closed on Talabat` });
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data?.message || e.message });
+  }
+});
+
+// POST /branches/:id/open — reopen this branch on Talabat
+router.post('/:id/open', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const branch = await prisma.branch.findUnique({
+    where: { id: req.params.id },
+    include: { chain: true },
+  });
+  if (!branch) return res.status(404).json({ error: 'Branch not found' });
+  try {
+    await talabat.setVendorStatus(
+      branch.vendorId, true,
+      branch.chain?.talabatClientId, branch.chain?.talabatClientSecret, branch.chain?.talabatChainId
+    );
+    res.json({ ok: true, message: `Branch "${branch.name}" opened on Talabat` });
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data?.message || e.message });
+  }
 });
 
 module.exports = router;

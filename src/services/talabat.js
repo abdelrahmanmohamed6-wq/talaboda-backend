@@ -98,4 +98,35 @@ async function pushDriverLocation(talabatOrderId, lat, lng, chainClientId, chain
   }
 }
 
-module.exports = { getToken, getOrderDetails, updateOrder, updateOrderStatus, pushDriverLocation };
+// PUT /v2/chains/{chainId}/vendors/{vendorId}/status
+// open=true → { status: "OPEN" }
+// open=false → { status: "CLOSED_UNTIL", closed_reason: "TECHNICAL_PROBLEM", closed_until: isoDate }
+async function setVendorStatus(vendorId, open, chainClientId, chainClientSecret, talabatChainId, closedUntilIso) {
+  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  if (!clientId || !talabatChainId || !vendorId) {
+    console.warn('[talabat] setVendorStatus: missing credentials or vendorId');
+    return null;
+  }
+  try {
+    const token = await getToken(clientId, clientSecret);
+    const body = open
+      ? { status: 'OPEN' }
+      : {
+          status: 'CLOSED_UNTIL',
+          closed_reason: 'TECHNICAL_PROBLEM',
+          closed_until: closedUntilIso || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        };
+    const res = await axios.put(
+      `${BASE}/v2/chains/${talabatChainId}/vendors/${vendorId}/status`,
+      body,
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' } }
+    );
+    console.log(`[talabat] Vendor ${vendorId} status set to ${open ? 'OPEN' : 'CLOSED_UNTIL'}`);
+    return res.data;
+  } catch (e) {
+    console.error('[talabat] setVendorStatus failed:', e.response?.data || e.message);
+    throw e;
+  }
+}
+
+module.exports = { getToken, getOrderDetails, updateOrder, updateOrderStatus, pushDriverLocation, setVendorStatus };

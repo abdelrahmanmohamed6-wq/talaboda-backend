@@ -67,10 +67,12 @@ router.patch('/:id/transit', auth(['DRIVER']), async (req, res) => {
 });
 
 router.patch('/:id/deliver', auth(['DRIVER']), async (req, res) => {
-  const { paymentType } = req.body;
+  const { paymentType, proofPhoto } = req.body;
+  const data = { status: 'DELIVERED', deliveredAt: new Date(), paymentType };
+  if (proofPhoto) data.proofPhoto = proofPhoto;
   const order = await prisma.order.update({
     where: { id: req.params.id, driverId: req.user.id },
-    data: { status: 'DELIVERED', deliveredAt: new Date(), paymentType }
+    data
   });
 
   const shift = await prisma.shift.findFirst({ where: { driverId: req.user.id, status: 'ACTIVE' } });

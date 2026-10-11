@@ -176,6 +176,9 @@ router.post('/talabat', async (req, res) => {
       getIO()?.to(`branch:${branch.id}`).emit('order:new', newOrder);
       getIO()?.to('admin').emit('order:new', newOrder);
 
+      // Auto-close check: if branch overwhelmed (≥5 pending + no free drivers) → close on Talabat
+      autoCloseIfOverwhelmed(branch).catch(e => console.error('[webhook] auto-close check error:', e.message));
+
     } catch (err) {
       console.error('[webhook] ❌ Failed to create order:', err.message);
       return res.status(500).json({ error: 'Failed to save order' });
@@ -200,5 +203,33 @@ router.post('/talabat', async (req, res) => {
 
   res.json({ ok: true });
 });
+
+async function autoCloseIfOverwhelmed(branch) {
+  const chain = branch.chain;
+  if (!chain?.talabatClientId || !chain?.talabatChainId || !branch.vendorId) return;
+
+  const [pendingCount, freeDriverCount] = await Promise.all([
+    prisma.order.count({
+      where: { branchId: branch.id, status: { in: ['PENDING', 'ASSIGNED'] } },
+    }),
+    prisma.user.count({
+      where: {
+        branchId: branch.id, role: 'DRIVER', isActive: true,
+        shifts: { some: { status: 'ACTIVE' } },
+        orders: { none: { status: { in: ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'] } } },
+      },
+    }),
+  ]);
+
+  if (pendingCount >= 5 && freeDriverCount === 0) {
+    console.log(`[webhook] Auto-closing branch "${branch.name}" — pending=${pendingCount}, freeDrivers=0`);
+    const closedUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+    await talabat.setVendorStatus(
+      branch.vendorId, false,
+      chain.talabatClientId, chain.talabatClientSecret, chain.talabatChainId,
+      closedUntil
+    );
+  }
+}
 
 module.exports = router;
