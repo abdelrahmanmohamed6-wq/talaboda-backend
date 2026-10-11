@@ -13,6 +13,7 @@ const webhookRoutes = require('./routes/webhook');
 const shiftsRoutes = require('./routes/shifts');
 const supportRoutes = require('./routes/support');
 const chainsRoutes = require('./routes/chains');
+const pickingRoutes = require('./routes/picking');
 
 const app = express();
 const httpServer = createServer(app);
@@ -35,6 +36,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/shifts', shiftsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/chains', chainsRoutes);
+app.use('/api/picking', pickingRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 

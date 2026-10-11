@@ -81,6 +81,7 @@ model Order {
   pickedUpAt      DateTime?
   deliveredAt     DateTime?
   items           Json?
+  pickingItems    Json?
   talabatStatus   String?
 
   branch   Branch @relation(fields: [branchId], references: [id])

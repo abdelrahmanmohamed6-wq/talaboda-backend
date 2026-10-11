@@ -1,10 +1,10 @@
 const axios = require('axios');
 
-// Per-chain token cache: { [clientId]: { token, expiry } }
-const tokenCache = {};
+const BASE = 'https://talabat.partner.deliveryhero.io';
+const TOKEN_URL = `${BASE}/v2/oauth/token`;
 
-const BASE_URL = process.env.TALABAT_API_URL || 'https://talabat.partner.deliveryhero.io';
-const IAM_URL = 'https://iam-core.deliveryhero.io/connect/token';
+// Per-clientId token cache
+const tokenCache = {};
 
 async function getToken(clientId, clientSecret) {
   const cached = tokenCache[clientId];
@@ -15,43 +15,68 @@ async function getToken(clientId, clientSecret) {
   params.append('client_id', clientId);
   params.append('client_secret', clientSecret);
 
-  const res = await axios.post(IAM_URL, params, {
+  const res = await axios.post(TOKEN_URL, params, {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
+  // Cache with 60s buffer before expiry
   tokenCache[clientId] = {
     token: res.data.access_token,
-    expiry: Date.now() + 1.8 * 60 * 60 * 1000
+    expiry: Date.now() + (res.data.expires_in - 60) * 1000
   };
   return tokenCache[clientId].token;
 }
 
-// Returns [clientId, clientSecret] using chain credentials or fallback to env vars
 function resolveCredentials(chainClientId, chainClientSecret) {
-  const clientId = chainClientId || process.env.TALABAT_CLIENT_ID;
-  const clientSecret = chainClientSecret || process.env.TALABAT_CLIENT_SECRET;
-  return [clientId, clientSecret];
+  return [
+    chainClientId || process.env.TALABAT_CLIENT_ID,
+    chainClientSecret || process.env.TALABAT_CLIENT_SECRET
+  ];
 }
 
-async function getOrderDetails(orderId, chainClientId, chainClientSecret) {
+// GET order details from Talabat
+async function getOrderDetails(talabatOrderId, chainClientId, chainClientSecret, talabatChainId) {
   const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
-  if (!clientId) return null;
-  const t = await getToken(clientId, clientSecret);
-  const res = await axios.get(`${BASE_URL}/orders/${orderId}`, {
-    headers: { Authorization: `Bearer ${t}` }
-  });
+  if (!clientId || !talabatChainId) return null;
+  try {
+    const token = await getToken(clientId, clientSecret);
+    const res = await axios.get(
+      `${BASE}/v2/chains/${talabatChainId}/orders/${talabatOrderId}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } }
+    );
+    return res.data;
+  } catch (e) {
+    console.error('Talabat getOrder failed:', e.response?.data || e.message);
+    return null;
+  }
+}
+
+// PATCH order — used for UPDATE_CART, READY_FOR_PICKUP, DISPATCHED, CANCELLED
+async function updateOrder(talabatOrderId, status, items, chainClientId, chainClientSecret, talabatChainId) {
+  const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
+  if (!clientId || !talabatChainId) throw new Error('Missing Talabat credentials or chainId');
+
+  const token = await getToken(clientId, clientSecret);
+  const body = { order_id: talabatOrderId, status, items: items || [] };
+
+  const res = await axios.patch(
+    `${BASE}/v2/chains/${talabatChainId}/orders/${talabatOrderId}`,
+    body,
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' } }
+  );
   return res.data;
 }
 
+// Legacy – kept for backward compat with existing code
 async function updateOrderStatus(talabatOrderId, status, chainClientId, chainClientSecret) {
   const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
   if (!clientId) return;
   try {
-    const t = await getToken(clientId, clientSecret);
+    const token = await getToken(clientId, clientSecret);
     await axios.patch(
-      `${BASE_URL}/orders/${talabatOrderId}/status`,
+      `${BASE}/orders/${talabatOrderId}/status`,
       { status },
-      { headers: { Authorization: `Bearer ${t}` } }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
   } catch (e) {
     console.error('Talabat status update failed:', e.message);
@@ -62,15 +87,15 @@ async function pushDriverLocation(talabatOrderId, lat, lng, chainClientId, chain
   const [clientId, clientSecret] = resolveCredentials(chainClientId, chainClientSecret);
   if (!clientId) return;
   try {
-    const t = await getToken(clientId, clientSecret);
+    const token = await getToken(clientId, clientSecret);
     await axios.post(
-      `${BASE_URL}/orders/${talabatOrderId}/driver-location`,
+      `${BASE}/orders/${talabatOrderId}/driver-location`,
       { latitude: lat, longitude: lng },
-      { headers: { Authorization: `Bearer ${t}` } }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
   } catch (e) {
     console.error('Talabat location push failed:', e.message);
   }
 }
 
-module.exports = { getOrderDetails, updateOrderStatus, pushDriverLocation };
+module.exports = { getToken, getOrderDetails, updateOrder, updateOrderStatus, pushDriverLocation };
