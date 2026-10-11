@@ -80,6 +80,7 @@ model Order {
   assignedAt      DateTime?
   pickedUpAt      DateTime?
   deliveredAt     DateTime?
+  promisedAt      DateTime?
   items           Json?
   pickingItems    Json?
   talabatStatus   String?

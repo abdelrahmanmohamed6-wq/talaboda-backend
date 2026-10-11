@@ -149,6 +149,19 @@ router.post('/talabat', async (req, res) => {
       }, null, 2));
     }
 
+    // Promised delivery time — try multiple field names Talabat might use
+    const promisedRaw =
+      orderData.promised_delivery_time ||
+      orderData.promised_at ||
+      orderData.estimated_delivery_time ||
+      orderData.delivery_time ||
+      payload.promised_delivery_time ||
+      payload.promised_at ||
+      payload.delivery_time ||
+      payload.eta ||
+      null;
+    const promisedAt = promisedRaw ? new Date(promisedRaw) : null;
+
     const paymentRaw = orderData.payment_type || payload.payment?.type || '';
     const paymentType = (paymentRaw === 'online' || paymentRaw === 'CARD' || paymentRaw === 'PAID')
       ? 'CARD'
@@ -180,6 +193,7 @@ router.post('/talabat', async (req, res) => {
           amount,
           paymentType,
           items: items.length > 0 ? items : undefined,
+          promisedAt,
         }
       });
       console.log(`[webhook] ✅ Order created: ${newOrder.id}`);
