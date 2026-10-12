@@ -5,8 +5,11 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
-  const where = req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } : {};
+router.get('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const where =
+    req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } :
+    req.user.role === 'CHAIN_OWNER' ? { branch: { chainId: req.user.chainId } } :
+    {};
   const drivers = await prisma.user.findMany({
     where: { ...where, role: 'DRIVER' },
     select: {
@@ -18,7 +21,7 @@ router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
   res.json(drivers);
 });
 
-router.post('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.post('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const { name, phone, password } = req.body;
   const branchId = req.user.role === 'BRANCH_MANAGER' ? req.user.branchId : req.body.branchId;
   const hashed = await bcrypt.hash(password, 10);
@@ -28,7 +31,7 @@ router.post('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
   res.json({ id: driver.id, name: driver.name, phone: driver.phone });
 });
 
-router.patch('/:id/toggle', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.patch('/:id/toggle', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const driver = await prisma.user.findUnique({ where: { id: req.params.id } });
   const updated = await prisma.user.update({
     where: { id: req.params.id },
@@ -47,7 +50,7 @@ router.patch('/:id', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) =
   res.json(driver);
 });
 
-router.delete('/:id', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.delete('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });

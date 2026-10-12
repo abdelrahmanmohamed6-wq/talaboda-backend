@@ -69,10 +69,11 @@ router.post('/end', auth(['DRIVER']), async (req, res) => {
 });
 
 // Get all shifts (admin) or branch shifts
-router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
-  const where = req.user.role === 'BRANCH_MANAGER'
-    ? { driver: { branchId: req.user.branchId } }
-    : {};
+router.get('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const where =
+    req.user.role === 'BRANCH_MANAGER' ? { driver: { branchId: req.user.branchId } } :
+    req.user.role === 'CHAIN_OWNER' ? { driver: { branch: { chainId: req.user.chainId } } } :
+    {};
   const shifts = await prisma.shift.findMany({
     where,
     include: {

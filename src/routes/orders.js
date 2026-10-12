@@ -16,8 +16,11 @@ async function chainCreds(branchId) {
   return [branch?.chain?.talabatClientId, branch?.chain?.talabatClientSecret, branch?.chain?.talabatChainId];
 }
 
-router.get('/', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
-  const where = req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } : {};
+router.get('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const where =
+    req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } :
+    req.user.role === 'CHAIN_OWNER' ? { branch: { chainId: req.user.chainId } } :
+    {};
   const { date } = req.query; // 'YYYY-MM-DD' — filter by createdAt date
   if (date) {
     const start = new Date(date);
