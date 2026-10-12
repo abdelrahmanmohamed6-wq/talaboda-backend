@@ -13,7 +13,7 @@ router.post('/start', auth(['DRIVER']), async (req, res) => {
 });
 
 // Admin opens shift for a specific driver
-router.post('/admin-open', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.post('/admin-open', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const { driverId } = req.body;
   if (!driverId) return res.status(400).json({ error: 'driverId مطلوب' });
   const existing = await prisma.shift.findFirst({ where: { driverId, status: 'ACTIVE' } });
@@ -26,7 +26,7 @@ router.post('/admin-open', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, 
 });
 
 // Admin collects debt and ends shift
-router.post('/:id/collect', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.post('/:id/collect', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const shift = await prisma.shift.findUnique({ where: { id: req.params.id } });
   if (!shift) return res.status(404).json({ error: 'الشيفت مش موجود' });
   if (shift.status !== 'ACTIVE') return res.status(400).json({ error: 'الشيفت مش نشط' });
