@@ -7,6 +7,49 @@ const { notifyClient } = require('../services/clientWebhook');
 
 const prisma = new PrismaClient();
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Auto-fix amount when order arrives with amount=0 — Talabat API may not have it ready yet
+async function tryFixAmountLater(orderId, talabatOrderId, chain) {
+  const delays = [30000, 90000, 180000]; // 30s, 90s, 3min
+  for (const delay of delays) {
+    await sleep(delay);
+    try {
+      const details = await talabat.getOrderDetails(
+        talabatOrderId,
+        chain?.talabatClientId,
+        chain?.talabatClientSecret,
+        chain?.talabatChainId
+      );
+      if (!details) continue;
+      const amount =
+        details.total_value ??
+        details.price?.total ??
+        details.grand_total ??
+        details.payment?.collect_at_pickup ??
+        details.payment?.grand_total ??
+        details.payment?.amount ??
+        0;
+      // Try summing items if API still returns 0
+      const itemsSum = (!amount && Array.isArray(details.products || details.items))
+        ? (details.products || details.items || []).reduce((s, it) => s + ((it.price || it.unit_price || 0) * (it.quantity || 1)), 0)
+        : 0;
+      const finalAmount = amount || itemsSum;
+      if (finalAmount > 0) {
+        const updated = await prisma.order.update({ where: { id: orderId }, data: { amount: finalAmount } });
+        console.log(`[webhook] ✅ Auto-fixed amount for ${talabatOrderId}: ${finalAmount} ج`);
+        getIO()?.to(`branch:${updated.branchId}`).emit('order:updated', updated);
+        getIO()?.to('admin').emit('order:updated', updated);
+        return;
+      }
+      console.log(`[webhook] Amount still 0 for ${talabatOrderId}, will retry...`);
+    } catch (e) {
+      console.warn(`[webhook] Amount fix retry failed for ${talabatOrderId}:`, e.message);
+    }
+  }
+  console.warn(`[webhook] ⚠️ Amount still 0 for ${talabatOrderId} after all retries`);
+}
+
 router.post('/talabat', async (req, res) => {
   const payload = req.body;
   const { order_id, status } = payload;
@@ -125,16 +168,19 @@ router.post('/talabat', async (req, res) => {
       null;
 
     const amount =
-      orderData.total_value ||
-      orderData.price?.total ||
-      orderData.grand_total ||
-      payload.price?.total ||
-      payload.grand_total ||
-      payload.subtotal ||
-      payload.payment?.grand_total ||
-      payload.payment?.collect_at_pickup ||
-      payload.payment?.subtotal ||
-      payload.payment?.amount ||
+      orderData.total_value ??
+      orderData.price?.total ??
+      orderData.grand_total ??
+      orderData.payment?.collect_at_pickup ??
+      orderData.payment?.grand_total ??
+      orderData.payment?.amount ??
+      payload.price?.total ??
+      payload.grand_total ??
+      payload.subtotal ??
+      payload.payment?.grand_total ??
+      payload.payment?.collect_at_pickup ??
+      payload.payment?.subtotal ??
+      payload.payment?.amount ??
       0;
 
     // Log all amount-related fields when amount is 0 so we can debug
@@ -197,7 +243,13 @@ router.post('/talabat', async (req, res) => {
           promisedAt,
         }
       });
-      console.log(`[webhook] ✅ Order created: ${newOrder.id}`);
+      console.log(`[webhook] ✅ Order created: ${newOrder.id} amount=${amount}`);
+
+      // If amount is still 0, kick off background retry — Talabat API may not be ready yet
+      if (!amount && branch.chain?.talabatClientId) {
+        console.log(`[webhook] Amount=0, scheduling auto-fix retries for ${order_id}`);
+        tryFixAmountLater(newOrder.id, String(order_id), branch.chain).catch(console.error);
+      }
 
       const driver = await assignNearestDriver(branch.id, newOrder.id);
       if (driver) {
