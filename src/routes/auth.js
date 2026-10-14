@@ -22,7 +22,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   const user = await prisma.user.findFirst({
     where: { OR: [{ phone: identifier }, { email: identifier }] },
-    include: { branch: true, ownedChain: true }
+    include: { branch: { include: { chain: { select: { id: true } } } }, ownedChain: true }
   });
 
   if (!user || !await bcrypt.compare(password, user.password)) {
@@ -31,7 +31,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!user.isActive) return res.status(403).json({ error: 'الحساب موقوف' });
 
   const token = jwt.sign(
-    { id: user.id, role: user.role, branchId: user.branchId, chainId: user.ownedChain?.id },
+    { id: user.id, role: user.role, branchId: user.branchId, chainId: user.ownedChain?.id || user.branch?.chain?.id },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );

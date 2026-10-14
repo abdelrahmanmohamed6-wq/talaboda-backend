@@ -20,7 +20,7 @@ function initSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    const { id, role, branchId } = socket.user;
+    const { id, role, branchId, chainId } = socket.user;
 
     if (role === 'DRIVER') {
       socket.join(`driver:${id}`);
@@ -35,10 +35,15 @@ function initSocket(httpServer) {
       socket.join('admin');
     }
 
+    if (role === 'CHAIN_OWNER' && chainId) {
+      socket.join(`chain:${chainId}`);
+    }
+
     socket.on('driver:location', ({ lat, lng }) => {
       if (role !== 'DRIVER') return;
       const payload = { driverId: id, lat, lng, timestamp: new Date() };
       io.to(`branch:${branchId}`).emit('driver:location', payload);
+      if (chainId) io.to(`chain:${chainId}`).emit('driver:location', payload);
       io.to('admin').emit('driver:location', payload);
       saveLocation(id, lat, lng);
     });

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { PrismaClient } = require('@prisma/client');
 const auth = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
+const { getIO } = require('../socket');
 
 const prisma = new PrismaClient();
 
@@ -62,6 +63,20 @@ router.get('/:id/stats', auth(), async (req, res) => {
     include: { orders: true }
   });
   res.json(shift);
+});
+
+// HTTP fallback for background location updates (when socket is unavailable)
+router.post('/location', auth(['DRIVER']), async (req, res) => {
+  const { lat, lng } = req.body;
+  if (lat == null || lng == null) return res.status(400).json({ error: 'lat/lng required' });
+  const { id: driverId, branchId, chainId } = req.user;
+  const payload = { driverId, lat: +lat, lng: +lng, timestamp: new Date() };
+  const io = getIO();
+  if (branchId) io?.to(`branch:${branchId}`).emit('driver:location', payload);
+  if (chainId) io?.to(`chain:${chainId}`).emit('driver:location', payload);
+  io?.to('admin').emit('driver:location', payload);
+  try { await prisma.driverLocation.create({ data: { driverId, lat: +lat, lng: +lng } }); } catch {}
+  res.json({ ok: true });
 });
 
 module.exports = router;

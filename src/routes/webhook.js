@@ -39,6 +39,7 @@ async function tryFixAmountLater(orderId, talabatOrderId, chain) {
         const updated = await prisma.order.update({ where: { id: orderId }, data: { amount: finalAmount } });
         console.log(`[webhook] ✅ Auto-fixed amount for ${talabatOrderId}: ${finalAmount} ج`);
         getIO()?.to(`branch:${updated.branchId}`).emit('order:updated', updated);
+        if (chain?.id) getIO()?.to(`chain:${chain.id}`).emit('order:updated', updated);
         getIO()?.to('admin').emit('order:updated', updated);
         return;
       }
@@ -259,6 +260,7 @@ router.post('/talabat', async (req, res) => {
         console.log('[webhook] No driver assigned (none available)');
       }
       getIO()?.to(`branch:${branch.id}`).emit('order:new', newOrder);
+      if (branch.chain?.id) getIO()?.to(`chain:${branch.chain.id}`).emit('order:new', newOrder);
       getIO()?.to('admin').emit('order:new', newOrder);
       notifyClient(newOrder.id).catch(() => {});
 
@@ -272,7 +274,10 @@ router.post('/talabat', async (req, res) => {
   }
 
   if (status === 'CANCELLED' && order_id) {
-    const existing = await prisma.order.findUnique({ where: { talabatOrderId: String(order_id) } });
+    const existing = await prisma.order.findUnique({
+      where: { talabatOrderId: String(order_id) },
+      include: { branch: { include: { chain: { select: { id: true } } } } }
+    });
     if (existing && existing.status !== 'CANCELLED') {
       const updated = await prisma.order.update({
         where: { id: existing.id },
@@ -280,6 +285,7 @@ router.post('/talabat', async (req, res) => {
       });
       console.log(`[webhook] Order ${order_id} marked CANCELLED`);
       getIO()?.to(`branch:${existing.branchId}`).emit('order:updated', updated);
+      if (existing.branch?.chain?.id) getIO()?.to(`chain:${existing.branch.chain.id}`).emit('order:updated', updated);
       getIO()?.to('admin').emit('order:updated', updated);
       if (existing.driverId) {
         getIO()?.to(`driver:${existing.driverId}`).emit('order:cancelled', { orderId: existing.id });
