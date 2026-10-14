@@ -65,6 +65,26 @@ router.get('/:id/stats', auth(), async (req, res) => {
   res.json(shift);
 });
 
+// GET /drivers/last-locations — latest location per active driver (for dashboard initial load)
+router.get('/last-locations', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  const where =
+    req.user.role === 'BRANCH_MANAGER' ? { branchId: req.user.branchId } :
+    req.user.role === 'CHAIN_OWNER' ? { branch: { chainId: req.user.chainId } } :
+    {};
+  const drivers = await prisma.user.findMany({
+    where: { ...where, role: 'DRIVER', isActive: true },
+    select: {
+      id: true, name: true,
+      locations: { orderBy: { createdAt: 'desc' }, take: 1 }
+    }
+  });
+  const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000);
+  const result = drivers
+    .filter(d => d.locations.length > 0 && d.locations[0].createdAt > eightHoursAgo)
+    .map(d => ({ driverId: d.id, name: d.name, lat: d.locations[0].lat, lng: d.locations[0].lng }));
+  res.json(result);
+});
+
 // HTTP fallback for background location updates (when socket is unavailable)
 router.post('/location', auth(['DRIVER']), async (req, res) => {
   const { lat, lng } = req.body;
