@@ -78,7 +78,26 @@ router.post('/', auth(['SUPER_ADMIN']), async (req, res) => {
 
 // Update chain
 router.patch('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
-  const { name, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret, clientWebhookUrl, clientWebhookSecret } = req.body;
+  const { name, talabatClientId, talabatClientSecret, talabatChainId, talabatWebhookSecret, clientWebhookUrl, clientWebhookSecret, ownerName, ownerEmail, ownerPassword } = req.body;
+
+  // Edit the chain owner account (name / email / password) without deleting the chain
+  if (ownerName !== undefined || ownerEmail !== undefined || ownerPassword) {
+    const existing = await prisma.chain.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Chain not found' });
+    if (ownerEmail) {
+      const taken = await prisma.user.findFirst({ where: { email: ownerEmail, NOT: { id: existing.ownerId } } });
+      if (taken) return res.status(409).json({ error: 'الإيميل ده مستخدم بالفعل' });
+    }
+    await prisma.user.update({
+      where: { id: existing.ownerId },
+      data: {
+        ...(ownerName && { name: ownerName }),
+        ...(ownerEmail && { email: ownerEmail }),
+        ...(ownerPassword && { password: await bcrypt.hash(ownerPassword, 10) }),
+      }
+    });
+  }
+
   const chain = await prisma.chain.update({
     where: { id: req.params.id },
     data: {
@@ -89,7 +108,8 @@ router.patch('/:id', auth(['SUPER_ADMIN']), async (req, res) => {
       ...(talabatWebhookSecret !== undefined && { talabatWebhookSecret: talabatWebhookSecret || null }),
       ...(clientWebhookUrl !== undefined && { clientWebhookUrl: clientWebhookUrl || null }),
       ...(clientWebhookSecret !== undefined && { clientWebhookSecret: clientWebhookSecret || null }),
-    }
+    },
+    include: { owner: { select: { id: true, name: true, email: true } } }
   });
   res.json(chain);
 });
