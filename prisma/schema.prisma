@@ -28,7 +28,7 @@ model User {
 
   ownedChain Chain?
 
-  orders         Order[]         @relation("DriverOrders")
+  orders         Order[]          @relation("DriverOrders")
   shifts         Shift[]
   locations      DriverLocation[]
   supportTickets SupportTicket[]
@@ -47,39 +47,39 @@ model Chain {
   clientWebhookUrl    String?
   clientWebhookSecret String?
 
-  owner    User     @relation(fields: [ownerId], references: [id])
-  ownerId  String   @unique
+  owner   User   @relation(fields: [ownerId], references: [id])
+  ownerId String @unique
 
   branches Branch[]
 }
 
 model Branch {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   name     String
   lat      Float
   lng      Float
   vendorId String
 
-  chain    Chain?  @relation(fields: [chainId], references: [id])
-  chainId  String?
+  chain   Chain?  @relation(fields: [chainId], references: [id])
+  chainId String?
 
-  drivers  User[]
-  orders   Order[]
+  drivers User[]
+  orders  Order[]
 }
 
 model Order {
-  id              String   @id @default(cuid())
-  talabatOrderId  String   @unique
+  id              String    @id @default(cuid())
+  talabatOrderId  String    @unique
   externalOrderId String?
-  status          String   @default("PENDING")
-  paymentType     String   @default("CASH")
-  amount          Float    @default(0)
+  status          String    @default("PENDING")
+  paymentType     String    @default("CASH")
+  amount          Float     @default(0)
   customerName    String
   customerPhone   String
   customerAddress String
   customerLat     Float?
   customerLng     Float?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
   assignedAt      DateTime?
   pickedUpAt      DateTime?
   deliveredAt     DateTime?
@@ -102,12 +102,12 @@ model Order {
 }
 
 model Shift {
-  id        String   @id @default(cuid())
-  status    String   @default("ACTIVE")
-  startTime DateTime @default(now())
+  id        String    @id @default(cuid())
+  status    String    @default("ACTIVE")
+  startTime DateTime  @default(now())
   endTime   DateTime?
-  totalCash Float    @default(0)
-  totalCard Float    @default(0)
+  totalCash Float     @default(0)
+  totalCard Float     @default(0)
 
   driver   User   @relation(fields: [driverId], references: [id])
   driverId String
