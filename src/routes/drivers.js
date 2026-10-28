@@ -75,12 +75,12 @@ router.get('/last-locations', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGE
     where: { ...where, role: 'DRIVER', isActive: true },
     select: {
       id: true, name: true,
-      locations: { orderBy: { createdAt: 'desc' }, take: 1 }
+      locations: { orderBy: { timestamp: 'desc' }, take: 1 }
     }
   });
   const eightHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000);
   const result = drivers
-    .filter(d => d.locations.length > 0 && d.locations[0].createdAt > eightHoursAgo)
+    .filter(d => d.locations.length > 0 && d.locations[0].timestamp > eightHoursAgo)
     .map(d => ({ driverId: d.id, name: d.name, lat: d.locations[0].lat, lng: d.locations[0].lng }));
   res.json(result);
 });
