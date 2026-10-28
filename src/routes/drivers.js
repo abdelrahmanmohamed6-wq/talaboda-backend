@@ -41,7 +41,7 @@ router.patch('/:id/toggle', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER'
   res.json({ isActive: updated.isActive });
 });
 
-router.patch('/:id', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.patch('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const { name, phone } = req.body;
   const driver = await prisma.user.update({
     where: { id: req.params.id },
