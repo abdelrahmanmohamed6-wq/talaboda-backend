@@ -52,7 +52,22 @@ router.patch('/:id', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) =
 });
 
 router.delete('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
-  await prisma.user.delete({ where: { id: req.params.id } });
+  const id = req.params.id;
+  const driver = await prisma.user.findUnique({ where: { id }, include: { branch: true } });
+  if (!driver || driver.role !== 'DRIVER') return res.status(404).json({ error: 'Driver not found' });
+  if (req.user.role === 'BRANCH_MANAGER' && driver.branchId !== req.user.branchId) return res.status(403).json({ error: 'Forbidden' });
+  if (req.user.role === 'CHAIN_OWNER' && driver.branch?.chainId !== req.user.chainId) return res.status(403).json({ error: 'Forbidden' });
+
+  // A plain user.delete fails with an FK violation once the driver has orders, shifts,
+  // locations or tickets. Keep the orders (history) but detach them from the driver.
+  await prisma.$transaction(async (tx) => {
+    const shiftIds = (await tx.shift.findMany({ where: { driverId: id }, select: { id: true } })).map(x => x.id);
+    await tx.supportTicket.deleteMany({ where: { driverId: id } });
+    await tx.order.updateMany({ where: { OR: [{ driverId: id }, { shiftId: { in: shiftIds } }] }, data: { driverId: null, shiftId: null } });
+    await tx.shift.deleteMany({ where: { driverId: id } });
+    await tx.driverLocation.deleteMany({ where: { driverId: id } });
+    await tx.user.delete({ where: { id } });
+  });
   res.json({ ok: true });
 });
 
