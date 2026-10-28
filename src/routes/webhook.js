@@ -4,6 +4,7 @@ const { getIO } = require('../socket');
 const { assignNearestDriver } = require('../services/assignment');
 const talabat = require('../services/talabat');
 const { notifyClient } = require('../services/clientWebhook');
+const { sendPushToDriver } = require('../services/pushNotification');
 
 const prisma = new PrismaClient();
 
@@ -258,6 +259,13 @@ router.post('/talabat', async (req, res) => {
       if (driver) {
         console.log(`[webhook] Driver assigned: ${driver.name}`);
         getIO()?.to(`driver:${driver.id}`).emit('order:new', newOrder);
+        const amountStr = newOrder.amount > 0 ? ` — ${newOrder.amount} ج` : '';
+        const payStr = newOrder.paymentType === 'CASH' ? '💵 كاش' : '💳 فيزا';
+        sendPushToDriver(driver.id, {
+          title: '🛵 أوردر جديد!',
+          body: `${newOrder.customerName || 'عميل'}${amountStr} ${payStr}`,
+          data: { orderId: newOrder.id },
+        }).catch(() => {});
       } else {
         console.log('[webhook] No driver assigned (none available)');
       }

@@ -102,4 +102,12 @@ router.post('/create-admin', auth(['SUPER_ADMIN']), async (req, res) => {
   res.json({ message: 'تم إنشاء الأدمن', admin: { id: admin.id, name: admin.name, email: admin.email, phone: admin.phone } });
 });
 
+// Save Expo push token for driver notifications
+router.post('/push-token', auth(['DRIVER']), async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'token required' });
+  await prisma.user.update({ where: { id: req.user.id }, data: { pushToken: token } });
+  res.json({ ok: true });
+});
+
 module.exports = router;

@@ -26,6 +26,8 @@ model User {
   branch   Branch? @relation(fields: [branchId], references: [id])
   branchId String?
 
+  pushToken  String?
+
   ownedChain Chain?
 
   orders         Order[]          @relation("DriverOrders")
