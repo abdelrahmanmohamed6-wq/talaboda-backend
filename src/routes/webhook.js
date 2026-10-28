@@ -180,6 +180,8 @@ router.post('/talabat', async (req, res) => {
       payload.subtotal ??
       payload.payment?.grand_total ??
       payload.payment?.collect_at_pickup ??
+      payload.payment?.order_total ??
+      payload.payment?.sub_total ??
       payload.payment?.subtotal ??
       payload.payment?.amount ??
       0;
