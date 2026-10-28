@@ -274,8 +274,7 @@ router.post('/talabat', async (req, res) => {
       getIO()?.to('admin').emit('order:new', newOrder);
       notifyClient(newOrder.id).catch(() => {});
 
-      // Auto-close check: if branch overwhelmed (≥5 pending + no free drivers) → close on Talabat
-      autoCloseIfOverwhelmed(branch).catch(e => console.error('[webhook] auto-close check error:', e.message));
+      // Auto-close disabled — branch managed manually from dashboard
 
     } catch (err) {
       console.error('[webhook] ❌ Failed to create order:', err.message);
