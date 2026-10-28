@@ -28,6 +28,8 @@ router.get('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (r
 router.post('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, res) => {
   const { name, lat, lng, vendorId, managerName, managerEmail, managerPassword } = req.body;
   const chainId = req.user.role === 'CHAIN_OWNER' ? req.user.chainId : req.body.chainId;
+  const dup = await prisma.branch.findFirst({ where: { vendorId: String(vendorId) } });
+  if (dup) return res.status(409).json({ error: `Vendor ID ${vendorId} مستخدم بالفعل في فرع "${dup.name}"` });
   const branch = await prisma.branch.create({ data: { name, lat: +lat, lng: +lng, vendorId, chainId } });
 
   if (managerEmail && managerPassword) {
@@ -42,6 +44,10 @@ router.post('/', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, res) => {
 
 router.patch('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, res) => {
   const { name, lat, lng, vendorId } = req.body;
+  if (vendorId) {
+    const dup = await prisma.branch.findFirst({ where: { vendorId: String(vendorId), NOT: { id: req.params.id } } });
+    if (dup) return res.status(409).json({ error: `Vendor ID ${vendorId} مستخدم بالفعل في فرع "${dup.name}"` });
+  }
   const branch = await prisma.branch.update({
     where: { id: req.params.id },
     data: { name, lat, lng, vendorId }
@@ -50,7 +56,20 @@ router.patch('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, res) => {
 });
 
 router.delete('/:id', auth(['SUPER_ADMIN', 'CHAIN_OWNER']), async (req, res) => {
-  await prisma.branch.delete({ where: { id: req.params.id } });
+  // Delete the branch together with everything that references it, in FK order.
+  // A plain branch.delete fails (FK violation) once the branch has orders or drivers,
+  // which left the branch in the database while the dashboard looked like it was gone.
+  const id = req.params.id;
+  await prisma.$transaction(async (tx) => {
+    const driverIds = (await tx.user.findMany({ where: { branchId: id }, select: { id: true } })).map(u => u.id);
+    await tx.supportTicket.deleteMany({ where: { OR: [{ order: { branchId: id } }, { driverId: { in: driverIds } }] } });
+    await tx.order.deleteMany({ where: { branchId: id } });
+    await tx.order.updateMany({ where: { driverId: { in: driverIds } }, data: { driverId: null } });
+    await tx.shift.deleteMany({ where: { driverId: { in: driverIds } } });
+    await tx.driverLocation.deleteMany({ where: { driverId: { in: driverIds } } });
+    await tx.user.deleteMany({ where: { branchId: id } });
+    await tx.branch.delete({ where: { id } });
+  });
   res.json({ ok: true });
 });
 
