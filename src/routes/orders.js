@@ -161,13 +161,16 @@ router.post('/import/:talabatOrderId', auth(['SUPER_ADMIN']), async (req, res) =
   }
 });
 
-router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'BRANCH_MANAGER']), async (req, res) => {
+router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const { driverId } = req.body;
   const order = await prisma.order.update({
     where: { id: req.params.id },
-    data: { driverId, assignedAt: new Date(), status: 'ASSIGNED' }
+    data: { driverId, assignedAt: new Date(), status: 'ASSIGNED' },
+    include: { branch: { include: { chain: { select: { id: true } } } } }
   });
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
+  if (order.branch?.chain?.id) getIO().to(`chain:${order.branch.chain.id}`).emit('order:updated', order);
+  getIO().to('admin').emit('order:updated', order);
   getIO().to(`driver:${driverId}`).emit('order:new', order);
   res.json(order);
 });
@@ -232,6 +235,7 @@ router.post('/fix-amounts', auth(['SUPER_ADMIN']), async (req, res) => {
 });
 
 // POST /orders/test — create a test order for demo/verification
+const { assignNearestDriver } = require('../services/assignment');
 router.post('/test', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   try {
     const targetBranchId = req.user.role === 'BRANCH_MANAGER' ? req.user.branchId : req.body.branchId;
@@ -255,10 +259,12 @@ router.post('/test', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), asy
         paymentType: 'CASH',
       }
     });
+    const driver = await assignNearestDriver(targetBranchId, newOrder.id);
+    if (driver) getIO()?.to(`driver:${driver.id}`).emit('order:new', newOrder);
     getIO()?.to(`branch:${targetBranchId}`).emit('order:new', newOrder);
     if (branch.chain?.id) getIO()?.to(`chain:${branch.chain.id}`).emit('order:new', newOrder);
     getIO()?.to('admin').emit('order:new', newOrder);
-    res.json({ ok: true, order: newOrder });
+    res.json({ ok: true, order: newOrder, assignedDriver: driver?.name || null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
