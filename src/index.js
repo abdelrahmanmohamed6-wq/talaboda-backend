@@ -19,6 +19,8 @@ const trackingRoutes = require('./routes/tracking');
 const app = express();
 const httpServer = createServer(app);
 
+app.set('trust proxy', 1); // Railway runs behind a proxy
+
 initSocket(httpServer);
 
 app.use(cors({
