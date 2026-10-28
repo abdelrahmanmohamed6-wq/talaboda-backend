@@ -231,4 +231,37 @@ router.post('/fix-amounts', auth(['SUPER_ADMIN']), async (req, res) => {
   res.json({ total: zeroOrders.length, ...results });
 });
 
+// POST /orders/test — create a test order for demo/verification
+router.post('/test', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
+  try {
+    const targetBranchId = req.user.role === 'BRANCH_MANAGER' ? req.user.branchId : req.body.branchId;
+    if (!targetBranchId) return res.status(400).json({ error: 'branchId مطلوب' });
+    const branch = await prisma.branch.findUnique({
+      where: { id: targetBranchId },
+      include: { chain: { select: { id: true } } }
+    });
+    if (!branch) return res.status(404).json({ error: 'الفرع غير موجود' });
+    const testId = `TEST-${Date.now()}`;
+    const newOrder = await prisma.order.create({
+      data: {
+        talabatOrderId: testId,
+        externalOrderId: `T${String(Date.now()).slice(-4)}`,
+        status: 'PENDING',
+        branchId: targetBranchId,
+        customerName: 'عميل تجريبي',
+        customerPhone: '01000000000',
+        customerAddress: 'عنوان تجريبي للاختبار',
+        amount: 150,
+        paymentType: 'CASH',
+      }
+    });
+    getIO()?.to(`branch:${targetBranchId}`).emit('order:new', newOrder);
+    if (branch.chain?.id) getIO()?.to(`chain:${branch.chain.id}`).emit('order:new', newOrder);
+    getIO()?.to('admin').emit('order:new', newOrder);
+    res.json({ ok: true, order: newOrder });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
