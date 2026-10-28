@@ -91,8 +91,18 @@ router.patch('/:id/deliver', auth(['DRIVER']), async (req, res) => {
 
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   getIO().to('admin').emit('order:updated', order);
-  const creds = await chainCreds(order.branchId);
-  await talabat.updateOrderStatus(order.talabatOrderId, 'DELIVERED', ...creds);
+  // Notify chain room
+  try {
+    const branchRow = await prisma.branch.findUnique({ where: { id: order.branchId }, select: { chain: { select: { id: true } } } });
+    if (branchRow?.chain?.id) getIO().to(`chain:${branchRow.chain.id}`).emit('order:updated', order);
+  } catch {}
+  // Non-fatal: Talabat API may fail for test orders or network issues
+  try {
+    const creds = await chainCreds(order.branchId);
+    await talabat.updateOrderStatus(order.talabatOrderId, 'DELIVERED', ...creds);
+  } catch (e) {
+    console.warn('[deliver] Talabat status update skipped:', e.message);
+  }
   notifyClient(order.id).catch(() => {});
   res.json(order);
 });
