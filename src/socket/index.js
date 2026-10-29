@@ -17,7 +17,6 @@ async function initSocket(httpServer) {
       const { createClient } = require('ioredis');
       const pub = createClient(process.env.REDIS_URL);
       const sub = pub.duplicate();
-      await Promise.all([pub.connect(), sub.connect()]);
       io.adapter(createAdapter(pub, sub));
       console.log('[socket] Redis adapter connected');
     } catch (e) {
