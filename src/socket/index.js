@@ -1,12 +1,29 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
 
+const prisma = new PrismaClient();
 let io;
 
-function initSocket(httpServer) {
+async function initSocket(httpServer) {
   io = new Server(httpServer, {
     cors: { origin: '*' }
   });
+
+  // Redis adapter — enables multi-instance scaling
+  if (process.env.REDIS_URL) {
+    try {
+      const { createAdapter } = require('@socket.io/redis-adapter');
+      const { createClient } = require('ioredis');
+      const pub = createClient(process.env.REDIS_URL);
+      const sub = pub.duplicate();
+      await Promise.all([pub.connect(), sub.connect()]);
+      io.adapter(createAdapter(pub, sub));
+      console.log('[socket] Redis adapter connected');
+    } catch (e) {
+      console.warn('[socket] Redis adapter failed, using in-memory:', e.message);
+    }
+  }
 
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -45,22 +62,13 @@ function initSocket(httpServer) {
       io.to(`branch:${branchId}`).emit('driver:location', payload);
       if (chainId) io.to(`chain:${chainId}`).emit('driver:location', payload);
       io.to('admin').emit('driver:location', payload);
-      saveLocation(id, lat, lng);
+      prisma.driverLocation.create({ data: { driverId: id, lat, lng } }).catch(() => {});
     });
 
     socket.on('disconnect', () => {});
   });
 
   return io;
-}
-
-async function saveLocation(driverId, lat, lng) {
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    await prisma.driverLocation.create({ data: { driverId, lat, lng } });
-    await prisma.$disconnect();
-  } catch {}
 }
 
 function getIO() {

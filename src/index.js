@@ -21,7 +21,7 @@ const httpServer = createServer(app);
 
 app.set('trust proxy', 1); // Railway runs behind a proxy
 
-initSocket(httpServer);
+initSocket(httpServer).catch(console.error);
 
 app.use(cors({
   origin: '*',
