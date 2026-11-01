@@ -7,7 +7,9 @@ let io;
 
 async function initSocket(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: '*' }
+    cors: { origin: '*' },
+    pingInterval: 25000,   // ping every 25s — keeps Railway load-balancer from closing idle connections
+    pingTimeout: 20000,    // wait 20s for pong before marking client as dead
   });
 
   // Redis adapter — enables multi-instance scaling
