@@ -173,8 +173,11 @@ router.post('/import/:talabatOrderId', auth(['SUPER_ADMIN']), async (req, res) =
 
 router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGER']), async (req, res) => {
   const { driverId } = req.body;
+  const whereClause = req.user.role === 'BRANCH_MANAGER'
+    ? { id: req.params.id, branchId: req.user.branchId }
+    : { id: req.params.id };
   const order = await prisma.order.update({
-    where: { id: req.params.id },
+    where: whereClause,
     data: { driverId, assignedAt: new Date(), status: 'ASSIGNED' },
     include: { branch: { include: { chain: { select: { id: true } } } } }
   });

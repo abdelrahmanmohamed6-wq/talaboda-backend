@@ -58,13 +58,14 @@ router.get('/me', auth(), async (req, res) => {
 });
 
 router.get('/seed-admin', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
   const existing = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
   if (existing) return res.json({ message: 'Admin already exists' });
   const password = await bcrypt.hash('admin123', 10);
   const admin = await prisma.user.create({
     data: { name: 'Super Admin', phone: '01000000000', password, role: 'SUPER_ADMIN' }
   });
-  res.json({ message: 'Admin created', phone: admin.phone, password: 'admin123' });
+  res.json({ message: 'Admin created', phone: admin.phone });
 });
 
 // Change own password

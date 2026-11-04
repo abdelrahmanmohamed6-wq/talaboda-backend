@@ -98,8 +98,10 @@ router.post('/talabat', async (req, res) => {
     // Verify webhook secret — per-chain or global fallback
     const secret = req.headers['x-secret'];
     const expectedSecret = branch.chain?.talabatWebhookSecret || process.env.TALABAT_WEBHOOK_SECRET;
-    if (expectedSecret && secret !== expectedSecret) {
-      console.warn(`[webhook] Invalid secret. Got="${secret}" Expected="${expectedSecret}"`);
+    if (!expectedSecret) {
+      console.warn('[webhook] ⚠️ No webhook secret configured — request accepted (set TALABAT_WEBHOOK_SECRET)');
+    } else if (secret !== expectedSecret) {
+      console.warn('[webhook] Invalid secret for vendorId:', vendorId);
       return res.status(401).json({ error: 'Invalid secret' });
     }
 
