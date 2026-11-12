@@ -68,17 +68,6 @@ router.get('/seed-admin', async (req, res) => {
   res.json({ message: 'Admin created', phone: admin.phone });
 });
 
-router.get('/init', async (req, res) => {
-  if (req.query.secret !== 'TalaBoda2026Init') return res.status(403).json({ error: 'forbidden' });
-  const hash = await bcrypt.hash('Admin@1234', 10);
-  const admin = await prisma.user.upsert({
-    where: { phone: '01000000000' },
-    update: { password: hash, role: 'SUPER_ADMIN', isActive: true },
-    create: { name: 'Super Admin', phone: '01000000000', password: hash, role: 'SUPER_ADMIN', isActive: true },
-  });
-  res.json({ ok: true, phone: admin.phone, password: 'Admin@1234' });
-});
-
 // Change own password
 router.patch('/change-password', auth(), async (req, res) => {
   const { currentPassword, newPassword } = req.body;
