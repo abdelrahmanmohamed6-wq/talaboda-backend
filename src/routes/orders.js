@@ -176,15 +176,25 @@ router.patch('/:id/reassign', auth(['SUPER_ADMIN', 'CHAIN_OWNER', 'BRANCH_MANAGE
   const whereClause = req.user.role === 'BRANCH_MANAGER'
     ? { id: req.params.id, branchId: req.user.branchId }
     : { id: req.params.id };
+
+  // fetch old driverId before update (to notify them on unassign)
+  const existing = await prisma.order.findUnique({ where: { id: req.params.id }, select: { driverId: true } });
+
+  const isUnassign = !driverId;
   const order = await prisma.order.update({
     where: whereClause,
-    data: { driverId, assignedAt: new Date(), status: 'ASSIGNED' },
+    data: {
+      driverId: driverId || null,
+      assignedAt: isUnassign ? null : new Date(),
+      status: isUnassign ? 'PENDING' : 'ASSIGNED',
+    },
     include: { branch: { include: { chain: { select: { id: true } } } } }
   });
   getIO().to(`branch:${order.branchId}`).emit('order:updated', order);
   if (order.branch?.chain?.id) getIO().to(`chain:${order.branch.chain.id}`).emit('order:updated', order);
   getIO().to('admin').emit('order:updated', order);
-  getIO().to(`driver:${driverId}`).emit('order:new', order);
+  if (driverId) getIO().to(`driver:${driverId}`).emit('order:new', order);
+  if (isUnassign && existing?.driverId) getIO().to(`driver:${existing.driverId}`).emit('order:updated', order);
   res.json(order);
 });
 
